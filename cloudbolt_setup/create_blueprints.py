@@ -5,10 +5,12 @@ failed `terraform apply` still shows the order as "Completed successfully".
   * "TF Repro - Apply Fails (Backend)"     -> BUG: order shows "Completed successfully"
   * "TF Repro - Apply Fails (No Backend)"  -> CONTROL: order correctly shows "Failed"
 
-Run on the CloudBolt server (as the user that runs CloudBolt), from the CloudBolt src dir:
-    TF_REPRO_REPO=akumar_terraform python manage.py shell < /path/to/create_blueprints.py
+Run on the CloudBolt server as the user that runs the jobengine, from the CloudBolt src dir:
+    cd /opt/cloudbolt
+    sudo -u cloudbolt python3 manage.py shell < /path/to/create_blueprints.py
 
-Source of the Terraform files (set exactly one; checked in this order):
+By default the Terraform files are cloned straight from the public GitHub repo, with no token.
+To use something else instead, set one of these (checked in this order):
     TF_REPRO_REPO    Label of a Source Code Repository (Admin > Source Code Repositories) whose
                      URL is this repo and whose credentials hold a token that can read it.
                      This is the same as choosing "Source Code Repository" in the blueprint UI.
@@ -60,11 +62,8 @@ elif os.environ.get("TF_REPRO_CONN"):
     connection_info = ConnectionInfo.objects.get(name=os.environ["TF_REPRO_CONN"])
 elif os.environ.get("TF_REPRO_SOURCE"):
     local_source = os.environ["TF_REPRO_SOURCE"]
-else:
-    raise SystemExit(
-        "Set TF_REPRO_REPO (Source Code Repository label), TF_REPRO_CONN (Connection Info "
-        "name), or TF_REPRO_SOURCE (local path). See the docstring at the top of this script."
-    )
+# Otherwise: public Git clone (WorkingDirectory finds or creates a token-less github.com
+# Connection Info on its own)
 
 env_name = os.environ.get("TF_REPRO_ENV")
 if env_name:
@@ -111,15 +110,15 @@ for bp_name, subdir in BLUEPRINTS:
             source_code_repo=source_code_repo,
             git_branch=branch,
         )
-    elif connection_info:
+    elif local_source:
+        wd_kwargs.update(source_type="LOCAL", source_path_or_url=local_source)
+    else:
         wd_kwargs.update(
             source_type="GIT",
             source_path_or_url=REPO_URL,
             git_branch=branch,
             connection_info=connection_info,
         )
-    else:
-        wd_kwargs.update(source_type="LOCAL", source_path_or_url=local_source)
     wd = WorkingDirectory.objects.create(**wd_kwargs)
 
     si = TerraformOperationBlueprintItem.objects.create(
