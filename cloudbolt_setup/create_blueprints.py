@@ -22,7 +22,13 @@ Optional:
     TF_REPRO_ENV     Name of the Environment to enable (default: first env with a resource handler)
     TF_REPRO_BRANCH  Branch to use (default: main)
 
-Safe to re-run: deletes and recreates the two blueprints each time.
+Azure mode (customer-like failure against real Azure):
+    TF_REPRO_AZURE_ENV  Name of an Environment of an Azure resource handler. When set, ONLY the
+                        blueprint "TF Repro - Azure Apply Fails (Backend)" is created (the other
+                        two are left untouched). It uses the OOTB "Azure-to-Terraform Variable Map"
+                        so Terraform gets the resource handler's credentials as ARM_* env vars.
+
+Safe to re-run: deletes and recreates the blueprints it manages each time.
 """
 import os
 import uuid
@@ -32,6 +38,7 @@ from django.conf import settings
 from accounts.models import Group
 from infrastructure.models import Environment
 from resources.models import ResourceType
+from generic_jobs.models import VariableMap
 from servicecatalog.models import ServiceBlueprint, TerraformOperationBlueprintItem
 from source_code_repos.models import SourceCodeRepo
 from utilities.models import ConnectionInfo
@@ -65,9 +72,18 @@ elif os.environ.get("TF_REPRO_SOURCE"):
 # Otherwise: public Git clone (WorkingDirectory finds or creates a token-less github.com
 # Connection Info on its own)
 
-env_name = os.environ.get("TF_REPRO_ENV")
-if env_name:
-    environment = Environment.objects.get(name=env_name)
+variable_maps = []
+if os.environ.get("TF_REPRO_AZURE_ENV"):
+    environment = Environment.objects.get(name=os.environ["TF_REPRO_AZURE_ENV"])
+    rh = environment.resource_handler and environment.resource_handler.cast()
+    if not rh or type(rh).__name__ != "AzureARMHandler":
+        raise SystemExit(f"Environment '{environment.name}' does not belong to an Azure handler.")
+    variable_maps = [VariableMap.objects.get(name="Azure-to-Terraform Variable Map")]
+    BLUEPRINTS = [
+        ("TF Repro - Azure Apply Fails (Backend)", "azure_apply_fails_with_backend"),
+    ]
+elif os.environ.get("TF_REPRO_ENV"):
+    environment = Environment.objects.get(name=os.environ["TF_REPRO_ENV"])
 else:
     # TF Operation items can only be ordered into enabled environments, and those must have a
     # resource handler. The env is just a label here; the repro configs never talk to a cloud.
@@ -130,7 +146,9 @@ for bp_name, subdir in BLUEPRINTS:
         deploy_seq=1,
     )
     si.enabled_environments.add(environment)
+    si.variable_maps.add(*variable_maps)
     print(
         f"Blueprint id={bp.id} '{bp.name}' -> source={si.source_directory}, "
-        f"groups={[g.name for g in groups]}, env={environment.name}"
+        f"groups={[g.name for g in groups]}, env={environment.name}, "
+        f"variable_maps={[vm.name for vm in variable_maps]}"
     )

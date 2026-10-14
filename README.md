@@ -47,3 +47,21 @@ successful `state pull`, so the job is marked SUCCESS.
 3. **Order** "TF Repro - Apply Fails (Backend)" from the Catalog. The order shows
    *Completed successfully* while its log says *Terraform apply failed*. Order
    "TF Repro - Apply Fails (No Backend)" to compare: it correctly shows *Failed*.
+
+## Azure repro (same failure as the customer)
+
+`azure_apply_fails_with_backend/` creates a resource group, VNet and subnet, then a storage account
+locked to that subnet. The subnet has no `Microsoft.Storage` service endpoint, so Azure rejects the
+storage account at apply time (`plan` passes). It uses `backend "local"` so no state storage is
+needed; an `azurerm` backend block is included, commented out, for an exact match.
+
+Credentials come from CloudBolt's OOTB **Azure-to-Terraform Variable Map** (ARM_* env vars from the
+environment's Azure resource handler). Create the blueprint with:
+```bash
+cd /opt/cloudbolt
+curl -sSLo /tmp/create_blueprints.py https://raw.githubusercontent.com/Ajitcloudbolt/akumar_terraform/main/cloudbolt_setup/create_blueprints.py
+sudo -u cloudbolt TF_REPRO_AZURE_ENV="<Azure environment name>" "$(which python)" manage.py shell < /tmp/create_blueprints.py
+```
+This only creates "TF Repro - Azure Apply Fails (Backend)". Order it: the order shows
+*Completed successfully* although the storage account was rejected. Clean up by deleting the
+CloudBolt resource or the `rg-cmp-apply-fail` resource group in Azure.
