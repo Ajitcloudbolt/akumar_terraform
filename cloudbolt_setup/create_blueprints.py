@@ -23,10 +23,16 @@ Optional:
     TF_REPRO_BRANCH  Branch to use (default: main)
 
 Azure mode (customer-like failure against real Azure):
-    TF_REPRO_AZURE_ENV  Name of an Environment of an Azure resource handler. When set, ONLY the
-                        blueprint "TF Repro - Azure Apply Fails (Backend)" is created (the other
-                        two are left untouched). It uses the OOTB "Azure-to-Terraform Variable Map"
-                        so Terraform gets the resource handler's credentials as ARM_* env vars.
+    TF_REPRO_AZURE_ENV     Name of an Environment of an Azure resource handler. When set, ONLY
+                           the one Azure blueprint below is created (the others are left
+                           untouched). It uses the OOTB "Azure-to-Terraform Variable Map" so
+                           Terraform gets the resource handler's credentials as ARM_* env vars.
+    TF_REPRO_AZURE_CONFIG  Which Azure blueprint to create:
+                             "network" (default): "TF Repro - Azure Apply Fails (Backend)" creates
+                                 a resource group, VNet and subnet, then fails on a storage account
+                             "storage": "Azure Storage Account (Repro)" creates ONLY a storage
+                                 account on that existing subnet; it fails, so nothing is created
+                                 (the customer's case). Order the "network" one once first.
 
 Safe to re-run: deletes and recreates the blueprints it manages each time.
 """
@@ -79,9 +85,14 @@ if os.environ.get("TF_REPRO_AZURE_ENV"):
     if not rh or type(rh).__name__ != "AzureARMHandler":
         raise SystemExit(f"Environment '{environment.name}' does not belong to an Azure handler.")
     variable_maps = [VariableMap.objects.get(name="Azure-to-Terraform Variable Map")]
-    BLUEPRINTS = [
-        ("TF Repro - Azure Apply Fails (Backend)", "azure_apply_fails_with_backend"),
-    ]
+    azure_blueprints = {
+        "network": ("TF Repro - Azure Apply Fails (Backend)", "azure_apply_fails_with_backend"),
+        "storage": ("Azure Storage Account (Repro)", "azure_storage_account"),
+    }
+    azure_config = os.environ.get("TF_REPRO_AZURE_CONFIG", "network")
+    if azure_config not in azure_blueprints:
+        raise SystemExit(f"TF_REPRO_AZURE_CONFIG must be one of {sorted(azure_blueprints)}")
+    BLUEPRINTS = [azure_blueprints[azure_config]]
 elif os.environ.get("TF_REPRO_ENV"):
     environment = Environment.objects.get(name=os.environ["TF_REPRO_ENV"])
 else:
@@ -139,7 +150,7 @@ for bp_name, subdir in BLUEPRINTS:
 
     si = TerraformOperationBlueprintItem.objects.create(
         blueprint=bp,
-        name="Terraform Apply That Fails",
+        name="Azure Storage Account" if subdir == "azure_storage_account" else "Terraform Apply That Fails",
         working_dir=wd,
         plan_directory=subdir,
         resource_type=resource_type,

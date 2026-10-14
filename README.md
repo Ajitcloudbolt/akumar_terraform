@@ -65,3 +65,15 @@ sudo -u cloudbolt TF_REPRO_AZURE_ENV="<Azure environment name>" "$(which python)
 This only creates "TF Repro - Azure Apply Fails (Backend)". Order it: the order shows
 *Completed successfully* although the storage account was rejected. Clean up by deleting the
 CloudBolt resource or the `rg-cmp-apply-fail` resource group in Azure.
+
+### Storage-account-only (exactly the customer's case: nothing gets created)
+
+`azure_storage_account/` creates only a storage account on the existing subnet from the repro above
+(`rg-cmp-apply-fail` / `vnet-cmp-apply-fail` / `snet-app`, no `Microsoft.Storage` endpoint). Azure
+rejects it, so nothing is created, but the order shows *Completed successfully*. Keep that resource
+group until you're done (order "TF Repro - Azure Apply Fails (Backend)" once first if it's gone).
+```bash
+sudo -u cloudbolt TF_REPRO_AZURE_ENV="<Azure environment name>" TF_REPRO_AZURE_CONFIG=storage \
+  "$(which python)" manage.py shell < /tmp/create_blueprints.py
+```
+This creates the blueprint "Azure Storage Account (Repro)".
